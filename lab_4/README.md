@@ -3,6 +3,12 @@
 
 ### Зміст
 * [Вступ](#вступ)
+* [Протокол збереження та отримання інформації](#протокол-збереження-та-отримання-інформації)
+* [Абстрактний клас `Storage`](#абстрактний-клас-storage)
+* [Абстрактний клас `MessageSocket`](#абстрактний-клас-messagesocket)
+* [Реалізація протоколу збереження-відтворення](#реалізація-протоколу-збереження-відтворення)
+* [Індивідуальні завдання](#індивідуальні-завдання)
+
 
 ### Вступ
 
@@ -81,6 +87,89 @@ class DictStorage(Storage):
 етапі розробки користуватись класом `DictStorage`,
 а потім реалізувати клас `MySQLStorage`.
 
+### Абстрактний клас `MessageSocket`
 
+Так само, як з класом `Storage`, для обрання способу
+розбиття TCP потоку доцільно використати абстрактний
+клас.
 
-ієї
+```python
+class MessageSocket:
+
+    def __init__(self, client_socket: socket):
+        self.socket: socket = client_socket
+        self.closed: bool = False
+
+    def recv_message(self) -> bytes:
+        raise NotImplementedError
+
+    def send_message(self, message: bytes):
+        raise NotImplementedError
+
+    def close(self):
+        raise NotImplementedError
+```
+
+У файлі `message_socket.py` наведені реалізації
+класів `DelimitedMessageSocket` (розбиває потік за
+роздільним символом) та `PrefixedMessageSocket`
+(розбиває потік згідно довжині, зазначеній в
+першому байті повідомлення).
+
+### Реалізація протоколу збереження-відтворення
+
+У цьому розділі ми розглянемо реалізацію ???
+
+Функція-обробник клієнта працює вже з
+`MessageSocket`, який ховає всередині звичайний
+`socket`.
+
+Почнемо з першої команди "Зберегти значення" --
+спершу йде символ `s`, потім ключ та значення,
+розділені двокрапкою:
+
+```python
+def handle_connection(self, client: MessageSocket):
+    while not client.closed:
+        message: bytes = client.recv_message()
+
+        if message.startswith(b's'):
+            key, value = message[1:].split(b':')
+            self.storage.store(key, value)
+    ...
+```
+
+Зауважте, що функція `handle_connection` обробляє
+вхідні повідомлення у циклі -- отже клієнт може
+залишатися на зв'язку та надсилати декілька
+повідомлень протягом одного з'єднання.
+
+Друга команда "Отримати значення" -- починається
+з символу `r`, далі йде значення ключа. Клієнтові
+повертається значення, закріплене за ключем:
+
+```python
+   ...
+        elif message.startswith(b'r'):
+            key = message[1:]
+            value = self.storage.retrieve(key)
+            client.send_message(value)
+   ...
+```
+
+Третя команда "Завершити роботу" -- найпростіша.
+Коли повідомлення починається з символу `x`,
+з'єднання з клієнтом розривається:
+
+```python
+   ...
+        elif message.startswith(b'x'):
+            client.close()
+            break
+   ...
+```
+
+Ключове слово `break` змушує програму вийти з циклу,
+і обробка з'єднання закінчується.
+
+### Індивідуальні завдання
